@@ -17,6 +17,7 @@ import { requestNotifications } from 'react-native-permissions';
 import messaging from '@react-native-firebase/messaging';
 import { Notifications } from 'react-native-notifications';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { format } from 'date-fns';
 
 const setObj = async (key, value) => { try { const jsonValue = JSON.stringify(value); await AsyncStorage.setItem(key, jsonValue) } catch (e) { console.log(e) } }
 const setPlain = async (key, value) => { try { await AsyncStorage.setItem(key, value) } catch (e) { console.log(e) } }
@@ -547,7 +548,7 @@ export default function App() {
       {login &&
         <View>
           <Text style={{ fontSize: 20, marginVertical: 10 }}>You are currently logged in.</Text>
-          <Text style={{ fontSize: 17, marginVertical: 10 }}>Last Sync: {lastSync}</Text>
+          <Text style={{ fontSize: 17, marginVertical: 10 }}>Last Sync: {lastSync ? format(new Date(lastSync), 'yyyy-MM-dd HH:mm') : ''}</Text>
 
           <Text style={{ marginTop: 10, fontSize: 15 }}>API Base URL:</Text>
           <TextInput
