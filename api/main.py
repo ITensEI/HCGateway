@@ -1,16 +1,8 @@
-import sentry_sdk
 from flask import Flask
 from flask_cors import CORS
 import os
 from dotenv import load_dotenv
 load_dotenv()
-
-try:
-    sentry_sdk.init(
-        dsn=os.environ['SENTRY_DSN'],
-        traces_sample_rate=1.0,
-    )
-except: pass
 
 app = Flask(__name__)
 CORS(app)
