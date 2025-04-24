@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View, TextInput, Button, Switch } from 'react-native';
+import { StyleSheet, Text, View, TextInput, Button, Switch, ActivityIndicator } from 'react-native';
 import React from 'react';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -262,190 +262,6 @@ const refreshTokenFunc = async () => {
   }
 }
 
-const sync = async () => {
-  const isInitialized = await initialize();
-  console.log("Syncing data...");
-  let numRecords = 0;
-  let numRecordsSynced = 0;
-  Toast.show({
-    type: 'info',
-    text1: "Syncing data...",
-  })
-
-  const currentTime = new Date().toISOString();
-
-  let startTime, endTime;
-  if (syncMode === 'days') {
-    if (fullSyncMode)
-      startTime = String(new Date(new Date().setDate(new Date().getDate() - (syncPeriodDays - 1))).toISOString());
-    else {
-      if (lastSync)
-        startTime = lastSync;
-      else
-        startTime = String(new Date(new Date().setDate(new Date().getDate() - (syncPeriodDays - 1))).toISOString());
-    }
-    endTime = String(new Date().toISOString());
-  } else if (syncMode === 'range') {
-    startTime = syncStartDate;
-    endTime = syncEndDate || String(new Date().toISOString());
-  }
-
-  await setPlain('lastSync', currentTime);
-  lastSync = currentTime;
-
-  let recordTypes = ["ActiveCaloriesBurned", "BasalBodyTemperature", "BloodGlucose", "BloodPressure", "BasalMetabolicRate", "BodyFat", "BodyTemperature", "BoneMass", "CyclingPedalingCadence", "CervicalMucus", "ExerciseSession", "Distance", "ElevationGained", "FloorsClimbed", "HeartRate", "Height", "Hydration", "LeanBodyMass", "MenstruationFlow", "MenstruationPeriod", "Nutrition", "OvulationTest", "OxygenSaturation", "Power", "RespiratoryRate", "RestingHeartRate", "SleepSession", "Speed", "Steps", "StepsCadence", "TotalCaloriesBurned", "Vo2Max", "Weight", "WheelchairPushes"];
-
-  for (let i = 0; i < recordTypes.length; i++) {
-    let records;
-    try {
-      records = await readRecords(recordTypes[i],
-        {
-          timeRangeFilter: {
-            operator: "between",
-            startTime: startTime,
-            endTime: endTime
-          }
-        }
-      );
-
-      records = records.records;
-    }
-    catch (err) {
-      console.log(err)
-      continue;
-    }
-    console.log(recordTypes[i]);
-    numRecords += records.length;
-
-    if (['SleepSession', 'Speed', 'HeartRate'].includes(recordTypes[i])) {
-      console.log("INSIDE IF - ", recordTypes[i])
-      for (let j = 0; j < records.length; j++) {
-        console.log("INSIDE FOR", j, recordTypes[i])
-        setTimeout(async () => {
-          try {
-            let record = await readRecord(recordTypes[i], records[j].metadata.id);
-            await axios.post(`${apiBase}/api/v2/sync/${recordTypes[i]}`, {
-              data: record
-            }, {
-              headers: {
-                "Authorization": `Bearer ${login}`
-              }
-            })
-          }
-          catch (err) {
-            console.log(err)
-          }
-
-          numRecordsSynced += 1;
-          try {
-            ReactNativeForegroundService.update({
-              id: 1244,
-              title: 'HCGateway Sync Progress',
-              message: `HCGateway is currently syncing... [${numRecordsSynced}/${numRecords}]`,
-              icon: 'ic_launcher',
-              setOnlyAlertOnce: true,
-              color: '#000000',
-              progress: {
-                max: numRecords,
-                curr: numRecordsSynced,
-              }
-            })
-
-            if (numRecordsSynced == numRecords) {
-              ReactNativeForegroundService.update({
-                id: 1244,
-                title: 'HCGateway Sync Progress',
-                message: `HCGateway is working in the background to sync your data.`,
-                icon: 'ic_launcher',
-                setOnlyAlertOnce: true,
-                color: '#000000',
-              })
-            }
-          }
-          catch { }
-        }, j * 3000)
-      }
-    }
-
-    else {
-      await axios.post(`${apiBase}/api/v2/sync/${recordTypes[i]}`, {
-        data: records
-      }, {
-        headers: {
-          "Authorization": `Bearer ${login}`
-        }
-      });
-      numRecordsSynced += records.length;
-      try {
-        ReactNativeForegroundService.update({
-          id: 1244,
-          title: 'HCGateway Sync Progress',
-          message: `HCGateway is currently syncing... [${numRecordsSynced}/${numRecords}]`,
-          icon: 'ic_launcher',
-          setOnlyAlertOnce: true,
-          color: '#000000',
-          progress: {
-            max: numRecords,
-            curr: numRecordsSynced,
-          }
-        })
-
-        if (numRecordsSynced == numRecords) {
-          ReactNativeForegroundService.update({
-            id: 1244,
-            title: 'HCGateway Sync Progress',
-            message: `HCGateway is working in the background to sync your data.`,
-            icon: 'ic_launcher',
-            setOnlyAlertOnce: true,
-            color: '#000000',
-          })
-        }
-      }
-      catch { }
-    }
-  }
-}
-
-const handlePush = async (message) => {
-  const isInitialized = await initialize();
-
-  let data = JSON.parse(message.data);
-  console.log(data);
-
-  insertRecords(data)
-    .then((ids) => {
-      console.log("Records inserted successfully: ", { ids });
-    })
-    .catch((error) => {
-      Notifications.postLocalNotification({
-        body: "Error: " + error.message,
-        title: `Push failed for ${data[0].recordType}`,
-        silent: false,
-        category: "Push Errors",
-        fireDate: new Date(),
-        android_channel_id: 'push-errors',
-      });
-    })
-}
-
-const handleDel = async (message) => {
-  const isInitialized = await initialize();
-
-  let data = JSON.parse(message.data);
-  console.log(data);
-
-  deleteRecordsByUuids(data.recordType, data.uuids, data.uuids)
-  axios.delete(`${apiBase}/api/v2/sync/${data.recordType}`, {
-    data: {
-      uuid: data.uuids,
-    },
-    headers: {
-      "Authorization": `Bearer ${login}`
-    }
-  })
-}
-
-
 export default function App() {
   const [, forceUpdate] = React.useReducer(x => x + 1, 0);
   const [form, setForm] = React.useState(null);
@@ -456,6 +272,117 @@ export default function App() {
   const [showEndPicker, setShowEndPicker] = React.useState(false);
   const [startDate, setStartDate] = React.useState(syncStartDate ? new Date(syncStartDate) : new Date());
   const [endDate, setEndDate] = React.useState(syncEndDate ? new Date(syncEndDate) : new Date());
+  const [syncInProgress, setSyncInProgress] = React.useState(false);
+  const [syncProgress, setSyncProgress] = React.useState({ current: 0, total: 0 });
+  const [syncElapsed, setSyncElapsed] = React.useState(0);
+  const syncTimerRef = React.useRef(null);
+
+  const formatElapsed = (seconds) => {
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
+  const sync = async () => {
+    setSyncInProgress(true);
+    setSyncProgress({ current: 0, total: 0 });
+    setSyncElapsed(0);
+    if (syncTimerRef.current) clearInterval(syncTimerRef.current);
+    const start = Date.now();
+    syncTimerRef.current = setInterval(() => {
+      setSyncElapsed(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+
+    const isInitialized = await initialize();
+    console.log("Syncing data...");
+    let numRecords = 0;
+    let numRecordsSynced = 0;
+    Toast.show({
+      type: 'info',
+      text1: "Syncing data...",
+    })
+
+    const currentTime = new Date().toISOString();
+
+    let startTime, endTime;
+    if (syncMode === 'days') {
+      if (fullSyncMode)
+        startTime = String(new Date(new Date().setDate(new Date().getDate() - (syncPeriodDays - 1))).toISOString());
+      else {
+        if (lastSync)
+          startTime = lastSync;
+        else
+          startTime = String(new Date(new Date().setDate(new Date().getDate() - (syncPeriodDays - 1))).toISOString());
+      }
+      endTime = String(new Date().toISOString());
+    } else if (syncMode === 'range') {
+      startTime = syncStartDate;
+      endTime = syncEndDate || String(new Date().toISOString());
+    }
+
+    await setPlain('lastSync', currentTime);
+    lastSync = currentTime;
+
+    let recordTypes = ["ActiveCaloriesBurned", "BasalBodyTemperature", "BloodGlucose", "BloodPressure", "BasalMetabolicRate", "BodyFat", "BodyTemperature", "BoneMass", "CyclingPedalingCadence", "CervicalMucus", "ExerciseSession", "Distance", "ElevationGained", "FloorsClimbed", "HeartRate", "Height", "Hydration", "LeanBodyMass", "MenstruationFlow", "MenstruationPeriod", "Nutrition", "OvulationTest", "OxygenSaturation", "Power", "RespiratoryRate", "RestingHeartRate", "SleepSession", "Speed", "Steps", "StepsCadence", "TotalCaloriesBurned", "Vo2Max", "Weight", "WheelchairPushes"];
+
+    let allRecords = [];
+    for (let i = 0; i < recordTypes.length; i++) {
+      try {
+        let records = await readRecords(recordTypes[i],
+          {
+            timeRangeFilter: {
+              operator: "between",
+              startTime: startTime,
+              endTime: endTime
+            }
+          }
+        );
+        allRecords.push({ type: recordTypes[i], records: records.records });
+        numRecords += records.records.length;
+      } catch (err) {
+        allRecords.push({ type: recordTypes[i], records: [] });
+      }
+    }
+    setSyncProgress({ current: 0, total: numRecords });
+
+    for (let i = 0; i < allRecords.length; i++) {
+      let { type, records } = allRecords[i];
+      if (['SleepSession', 'Speed', 'HeartRate'].includes(type)) {
+        for (let j = 0; j < records.length; j++) {
+          try {
+            let record = await readRecord(type, records[j].metadata.id);
+            await axios.post(`${apiBase}/api/v2/sync/${type}`, {
+              data: record
+            }, {
+              headers: {
+                "Authorization": `Bearer ${login}`
+              }
+            });
+          } catch (err) { }
+          numRecordsSynced += 1;
+          setSyncProgress({ current: numRecordsSynced, total: numRecords });
+        }
+      } else {
+        await axios.post(`${apiBase}/api/v2/sync/${type}`, {
+          data: records
+        }, {
+          headers: {
+            "Authorization": `Bearer ${login}`
+          }
+        });
+        numRecordsSynced += records.length;
+        setSyncProgress({ current: numRecordsSynced, total: numRecords });
+      }
+    }
+    setSyncInProgress(false);
+    if (syncTimerRef.current) clearInterval(syncTimerRef.current);
+  };
+
+  React.useEffect(() => {
+    return () => {
+      if (syncTimerRef.current) clearInterval(syncTimerRef.current);
+    };
+  }, []);
 
   const loginFunc = async () => {
     Toast.show({
@@ -729,6 +656,22 @@ export default function App() {
                 />
               )}
             </>
+          )}
+
+          {syncInProgress && (
+            <View style={{ marginVertical: 15, alignItems: 'center' }}>
+              <Text style={{ fontSize: 16, marginBottom: 5 }}>Sync in progress...</Text>
+              <Text style={{ fontSize: 15, marginBottom: 5 }}>Elapsed: {formatElapsed(syncElapsed)}</Text>
+              <Text style={{ fontSize: 15, marginBottom: 5 }}>
+                {syncProgress.current} / {syncProgress.total} records
+              </Text>
+              <ActivityIndicator
+                size="large"
+                color="#007AFF"
+                style={{ marginTop: 10 }}
+                animating={true}
+              />
+            </View>
           )}
 
           <View style={{ marginTop: 20 }}>
