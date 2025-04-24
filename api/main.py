@@ -7,10 +7,6 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# deprecate v1 for security reasons
-# from apiVersions.v1 import init_app as init_v1
-# init_v1(app)
-
 from apiVersions.v2 import init_app as init_v2
 init_v2(app)
 
