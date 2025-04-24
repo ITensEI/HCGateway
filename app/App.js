@@ -522,15 +522,15 @@ export default function App() {
             }}
           />
 
-          <Text style={{ marginTop: 10, fontSize: 15 }}>Sync Interval (in seconds) (defualt is 2 hours):</Text>
+          <Text style={{ marginTop: 10, fontSize: 15 }}>Sync Interval (in hours) (default is 2 hours):</Text>
           <TextInput
             style={styles.input}
             placeholder="Sync Interval"
             keyboardType='numeric'
-            defaultValue={(taskDelay / 1000).toString()}
+            defaultValue={(taskDelay / (1000 * 60 * 60)).toString()}
             onChangeText={text => {
-              taskDelay = Number(text) * 1000;
-              setPlain('taskDelay', String(text * 1000));
+              taskDelay = Number(text) * 60 * 60 * 1000;
+              setPlain('taskDelay', String(taskDelay));
               ReactNativeForegroundService.update_task(() => sync(), {
                 delay: taskDelay,
               })
