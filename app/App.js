@@ -16,6 +16,7 @@ import ReactNativeForegroundService from '@supersami/rn-foreground-service';
 import { requestNotifications } from 'react-native-permissions';
 import messaging from '@react-native-firebase/messaging';
 import { Notifications } from 'react-native-notifications';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 const setObj = async (key, value) => { try { const jsonValue = JSON.stringify(value); await AsyncStorage.setItem(key, jsonValue) } catch (e) { console.log(e) } }
 const setPlain = async (key, value) => { try { await AsyncStorage.setItem(key, value) } catch (e) { console.log(e) } }
@@ -64,6 +65,10 @@ let apiBase = 'https://api.hcgateway.shuchir.dev';
 let lastSync = null;
 let taskDelay = 7200 * 1000; // 2 hours
 let fullSyncMode = true; // Default to full 30-day sync
+let syncPeriodDays = 30; // Default to 30 days
+let syncMode = 'days'; // 'days' or 'range'
+let syncStartDate = null;
+let syncEndDate = null;
 
 Toast.show({
   type: 'info',
@@ -108,6 +113,28 @@ get('fullSyncMode')
     if (res !== null) {
       fullSyncMode = res === 'true';
     }
+  })
+
+get('syncPeriodDays')
+  .then(res => {
+    if (res) {
+      syncPeriodDays = Number(res);
+    }
+  })
+
+get('syncMode')
+  .then(res => {
+    if (res) syncMode = res;
+  })
+
+get('syncStartDate')
+  .then(res => {
+    if (res) syncStartDate = res;
+  })
+
+get('syncEndDate')
+  .then(res => {
+    if (res) syncEndDate = res;
   })
 
 const askForPermissions = async () => {
@@ -246,15 +273,20 @@ const sync = async () => {
 
   const currentTime = new Date().toISOString();
 
-  let startTime;
-  if (fullSyncMode)
-    startTime = String(new Date(new Date().setDate(new Date().getDate() - 29)).toISOString());
-
-  else {
-    if (lastSync)
-      startTime = lastSync;
-    else
-      startTime = String(new Date(new Date().setDate(new Date().getDate() - 29)).toISOString());
+  let startTime, endTime;
+  if (syncMode === 'days') {
+    if (fullSyncMode)
+      startTime = String(new Date(new Date().setDate(new Date().getDate() - (syncPeriodDays - 1))).toISOString());
+    else {
+      if (lastSync)
+        startTime = lastSync;
+      else
+        startTime = String(new Date(new Date().setDate(new Date().getDate() - (syncPeriodDays - 1))).toISOString());
+    }
+    endTime = String(new Date().toISOString());
+  } else if (syncMode === 'range') {
+    startTime = syncStartDate;
+    endTime = syncEndDate || String(new Date().toISOString());
   }
 
   await setPlain('lastSync', currentTime);
@@ -270,7 +302,7 @@ const sync = async () => {
           timeRangeFilter: {
             operator: "between",
             startTime: startTime,
-            endTime: String(new Date().toISOString())
+            endTime: endTime
           }
         }
       );
@@ -417,6 +449,12 @@ export default function App() {
   const [, forceUpdate] = React.useReducer(x => x + 1, 0);
   const [form, setForm] = React.useState(null);
   const [showSyncWarning, setShowSyncWarning] = React.useState(false);
+  const [selectedSyncPeriod, setSelectedSyncPeriod] = React.useState(syncPeriodDays);
+  const [selectedSyncMode, setSelectedSyncMode] = React.useState(syncMode);
+  const [showStartPicker, setShowStartPicker] = React.useState(false);
+  const [showEndPicker, setShowEndPicker] = React.useState(false);
+  const [startDate, setStartDate] = React.useState(syncStartDate ? new Date(syncStartDate) : new Date());
+  const [endDate, setEndDate] = React.useState(syncEndDate ? new Date(syncEndDate) : new Date());
 
   const loginFunc = async () => {
     Toast.show({
@@ -593,6 +631,105 @@ export default function App() {
             </View>
           )}
 
+          <Text style={{ marginTop: 10, fontSize: 15 }}>Sync Mode:</Text>
+          <View style={{ flexDirection: 'row', marginBottom: 10 }}>
+            <Button
+              title="By Days"
+              onPress={async () => {
+                setSelectedSyncMode('days');
+                syncMode = 'days';
+                await setPlain('syncMode', 'days');
+              }}
+              color={selectedSyncMode === 'days' ? 'blue' : undefined}
+            />
+            <Button
+              title="By Date Range"
+              onPress={async () => {
+                setSelectedSyncMode('range');
+                syncMode = 'range';
+                await setPlain('syncMode', 'range');
+              }}
+              color={selectedSyncMode === 'range' ? 'blue' : undefined}
+            />
+          </View>
+
+          {selectedSyncMode === 'days' && (
+            <>
+              <Text style={{ marginTop: 10, fontSize: 15 }}>Historical Sync Period (days):</Text>
+              <View style={{ flexDirection: 'row', marginBottom: 10 }}>
+                {[7, 30, 90].map(days => (
+                  <Button
+                    key={days}
+                    title={days + ' days'}
+                    onPress={async () => {
+                      syncPeriodDays = days;
+                      setSelectedSyncPeriod(days);
+                      await setPlain('syncPeriodDays', String(days));
+                      Toast.show({
+                        type: 'success',
+                        text1: `Historical sync period set to ${days} days`,
+                      });
+                    }}
+                    color={selectedSyncPeriod === days ? 'blue' : undefined}
+                  />
+                ))}
+              </View>
+              <TextInput
+                style={styles.input}
+                placeholder="Custom days"
+                keyboardType='numeric'
+                value={selectedSyncPeriod.toString()}
+                onChangeText={async text => {
+                  const val = Number(text);
+                  if (!isNaN(val) && val > 0) {
+                    syncPeriodDays = val;
+                    setSelectedSyncPeriod(val);
+                    await setPlain('syncPeriodDays', String(val));
+                  }
+                }}
+              />
+            </>
+          )}
+
+          {selectedSyncMode === 'range' && (
+            <>
+              <Text style={{ marginTop: 10, fontSize: 15 }}>Select Start Date:</Text>
+              <Button title={startDate.toDateString()} onPress={() => setShowStartPicker(true)} />
+              {showStartPicker && (
+                <DateTimePicker
+                  value={startDate}
+                  mode="date"
+                  display="default"
+                  onChange={async (event, date) => {
+                    setShowStartPicker(false);
+                    if (date) {
+                      setStartDate(date);
+                      syncStartDate = date.toISOString();
+                      await setPlain('syncStartDate', syncStartDate);
+                    }
+                  }}
+                />
+              )}
+              <Text style={{ marginTop: 10, fontSize: 15 }}>Select End Date:</Text>
+              <Button title={endDate.toDateString()} onPress={() => setShowEndPicker(true)} />
+              {showEndPicker && (
+                <DateTimePicker
+                  value={endDate}
+                  mode="date"
+                  display="default"
+                  onChange={async (event, date) => {
+                    setShowEndPicker(false);
+                    if (date) {
+                      setEndDate(date);
+                      syncEndDate = date.toISOString();
+                      await setPlain('syncEndDate', syncEndDate);
+                    }
+                  }}
+                />
+              )}
+            </>
+          )}
+
           <View style={{ marginTop: 20 }}>
             <Button
               title="Sync Now"
@@ -602,24 +739,24 @@ export default function App() {
             />
           </View>
 
-          <View style={{ marginTop: 20 }}>
-            <Button
-              title="Logout"
-              onPress={() => {
-                delkey('login');
-                login = null;
-                Toast.show({
-                  type: 'success',
-                  text1: "Logged out successfully",
-                })
-                forceUpdate();
-              }}
-              color={'darkred'}
-            />
-          </View>
+          <View style={{ marginTop: 20 }}></View>
+          <Button
+            title="Logout"
+            onPress={() => {
+              delkey('login');
+              login = null;
+              Toast.show({
+                type: 'success',
+                text1: "Logged out successfully",
+              })
+              forceUpdate();
+            }}
+            color={'darkred'}
+          />
         </View>
       }
-      {!login &&
+      {
+        !login &&
         <View>
           <Text style={{
             fontSize: 30,
