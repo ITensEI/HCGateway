@@ -35,6 +35,7 @@ jobs:
           cd app
           npx patch-package || true
           cd android
+          chmod +x gradlew
           ./gradlew assembleRelease
 
       - name: Upload APK
