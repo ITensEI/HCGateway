@@ -1,3 +1,29 @@
+"""
+API v2 Routes for HCGateway
+--------------------------
+This module defines the REST API endpoints for user authentication, token management, data synchronization, push notifications, and data retrieval for the HCGateway platform.
+
+Endpoints:
+- /api/v2/login: User login and registration
+- /api/v2/refresh: Refresh authentication token
+- /api/v2/revoke: Revoke authentication token
+- /api/v2/sync/<method>: Sync health data to the server
+- /api/v2/fetch/<method>: Fetch health data from the server
+- /api/v2/push/<method>: Push data to device via FCM
+- /api/v2/delete/<method>: Delete data from device via FCM
+- /api/v2/sync/<method> [DELETE]: Delete data from server
+
+Authentication:
+- All endpoints except /login and /refresh require a valid Bearer token in the Authorization header.
+- Token expiry is checked before each request.
+
+Data Encryption:
+- Health data is encrypted using Fernet with a key derived from the user's password hash.
+
+Push Notifications:
+- Uses Firebase Cloud Messaging (FCM) to notify devices for push and delete operations.
+"""
+
 from flask import Blueprint, request, jsonify, g
 import os, json
 from dotenv import load_dotenv
@@ -19,6 +45,7 @@ v2 = Blueprint('v2', __name__, url_prefix='/api/v2/')
 
 @v2.before_request
 def before_request():
+    # This function runs before every request to check authentication except for login and refresh endpoints.
     if request.endpoint == 'v2.login' or request.endpoint == 'v2.refresh':
         return
     
@@ -43,6 +70,14 @@ def before_request():
 
 @v2.route("/login", methods=['POST'])
 def login(): 
+
+    # User login or registration endpoint.
+    # - If the user does not exist, creates a new user and returns a token.
+    # - If the user exists, verifies the password and returns a token.
+    # - Optionally updates the FCM token for push notifications.
+    # Request JSON: {"username": str, "password": str, "fcmToken": str (optional)}
+    # Response: {"token": str, "refresh": str, "expiry": str}
+
     if not request.json or not 'username' in request.json or not 'password' in request.json:
         return jsonify({'error': 'invalid request'}), 400
     username = request.json['username']
@@ -103,6 +138,11 @@ def login():
 
 @v2.route("/refresh", methods=['POST'])
 def refresh():
+
+    # Refresh authentication token using a valid refresh token.
+    # Request JSON: {"refresh": str}
+    # Response: {"token": str, "refresh": str, "expiry": str}
+
     if not request.json or not 'refresh' in request.json:
         return jsonify({'error': 'invalid request'}), 400
 
@@ -129,6 +169,11 @@ def refresh():
 
 @v2.route("/revoke", methods=['DELETE'])
 def revoke():
+
+    # Revoke the current authentication token and refresh token.
+    # Requires Authorization header with Bearer token.
+    # Response: {"success": True}
+
     token = request.headers.get('Authorization').split(' ')[1]
 
     db = mongo['hcgateway']
@@ -147,6 +192,13 @@ def revoke():
 
 @v2.post("/sync/<method>")
 def sync(method):
+
+    # Sync health data to the server for a specific record type (method).
+    # - Data is encrypted before storage.
+    # - If a record exists, it is updated; otherwise, it is inserted.
+    # Request JSON: {"data": list or dict}
+    # Response: {"success": True}
+
     print(request.json)
     method = method[0].lower() + method[1:]
     if not method:
@@ -210,6 +262,12 @@ def sync(method):
 
 @v2.route("/fetch/<method>", methods=['POST'])
 def fetch(method):
+
+    # Fetch health data from the server for a specific record type (method).
+    # - Decrypts and returns all matching records.
+    # Request JSON: {"queries": list (optional)}
+    # Response: list of records
+
     if not method:
         return jsonify({'error': 'no method provided'}), 400
 
@@ -241,6 +299,11 @@ def fetch(method):
 
 @v2.route("/push/<method>", methods=['PUT'])
 def pushData(method):
+
+    # Push data to the user's device using FCM for a specific record type (method).
+    # Request JSON: {"data": list or dict}
+    # Response: {"success": True, "message": str}
+
     if not method:
         return jsonify({'error': 'no method provided'}), 400
     if not "data" in request.json:
@@ -283,6 +346,11 @@ def pushData(method):
 
 @v2.route("/delete/<method>", methods=['DELETE'])
 def delData(method):
+
+    # Request deletion of data from the user's device using FCM for a specific record type (method).
+    # Request JSON: {"uuid": list or str}
+    # Response: {"success": True, "message": str}
+
     if not method:
         return jsonify({'error': 'no method provided'}), 400
     if not "uuid" in request.json:
@@ -324,6 +392,11 @@ def delData(method):
 
 @v2.delete("/sync/<method>")
 def delFromDb(method):
+
+    # Delete data from the server for a specific record type (method).
+    # Request JSON: {"uuid": list or str}
+    # Response: {"success": True}
+
     method = method[0].lower() + method[1:]
     if not method:
         return jsonify({'error': 'no method provided'}), 400
