@@ -40,12 +40,16 @@ ph = PasswordHasher()
 
 from cryptography.fernet import Fernet
 import base64, secrets, datetime
+import pytz
+from tzlocal import get_localzone
 
 v2 = Blueprint('v2', __name__, url_prefix='/api/v2/')
 
 @v2.before_request
 def before_request():
+    
     # This function runs before every request to check authentication except for login and refresh endpoints.
+    
     if request.endpoint == 'v2.login' or request.endpoint == 'v2.refresh':
         return
     
@@ -198,8 +202,30 @@ def sync(method):
     # - If a record exists, it is updated; otherwise, it is inserted.
     # Request JSON: {"data": list or dict}
     # Response: {"success": True}
+    
+    pst_tz = pytz.timezone('America/Los_Angeles')
+    timestamp = datetime.datetime.now(pst_tz).strftime('%Y-%m-%d %H:%M')
 
-    print(request.json)
+    # Logging: show sync time from and to, the request, the method and number of records
+    req_data = request.json.get('data', [])
+    if type(req_data) != list:
+        req_data = [req_data]
+    sync_from = None
+    sync_to = None
+    if req_data:
+        # Try to get the earliest and latest time/startTime from the records
+        times = []
+        for item in req_data:
+            if 'time' in item:
+                times.append(item['time'])
+            elif 'startTime' in item and 'endTime' in item:
+                times.append(item['startTime'])
+                times.append(item['endTime'])
+        if times:
+            sync_from = min(times)
+            sync_to = max(times)
+    print(f"[sync] method={method}, records={len(req_data)}, from={sync_from}, to={sync_to}, request={request.json}", flush=True)
+
     method = method[0].lower() + method[1:]
     if not method:
         return jsonify({'error': 'no method provided'}), 400
@@ -207,7 +233,8 @@ def sync(method):
         return jsonify({'error': 'no data provided'}), 400
     
     userid = g.user
-    print(userid)
+
+    # print(userid)
 
     db = mongo['hcgateway']
     usrStore = db['users']
@@ -215,7 +242,8 @@ def sync(method):
     try: user = usrStore.find_one({'_id': userid})
     except InvalidId: return jsonify({'error': 'invalid user id'}), 400
 
-    print(user)
+    # print(user)
+
     hashed_password = user['password']
     key = base64.urlsafe_b64encode(hashed_password.encode("utf-8").ljust(32)[:32])
     fernet = Fernet(key)
@@ -223,7 +251,8 @@ def sync(method):
     data = request.json['data']
     if type(data) != list:
         data = [data]
-    print(method, len(data))
+
+    print(f"\033[96m[{timestamp}] {method} - #{len(data)}\033[0m\n\n", flush=True)
 
     db = mongo['hcgateway_'+userid]
     collection = db[method]
@@ -250,10 +279,12 @@ def sync(method):
 
         # print(starttime, endtime)
         try:
-            print("creating")
+            print("creating", flush=True)
+
             collection.insert_one({"_id": itemid, "id": itemid, 'data': encrypted, "app": item['metadata']['dataOrigin'], "start": starttime, "end": endtime})
         except:
-            print("updating")
+            print("updating", flush=True)
+
             collection.update_one({"_id": itemid}, {"$set": 
                                                  {'data': encrypted, "app": item['metadata']['dataOrigin'], "start": starttime, "end": endtime}
                                                 })

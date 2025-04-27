@@ -328,6 +328,7 @@ export default function App() {
     let allRecords = [];
     for (let i = 0; i < recordTypes.length; i++) {
       try {
+        console.log(`Reading records for type: ${recordTypes[i]}, startTime: ${startTime}, endTime: ${endTime}`);
         let records = await readRecords(recordTypes[i],
           {
             timeRangeFilter: {
@@ -337,9 +338,11 @@ export default function App() {
             }
           }
         );
+        console.log(`Records returned for ${recordTypes[i]}: ${records.records.length}`);
         allRecords.push({ type: recordTypes[i], records: records.records });
         numRecords += records.records.length;
       } catch (err) {
+        console.log(`Error reading records for ${recordTypes[i]}:`, err);
         allRecords.push({ type: recordTypes[i], records: [] });
       }
     }
